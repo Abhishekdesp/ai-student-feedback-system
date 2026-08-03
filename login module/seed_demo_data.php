@@ -1,21 +1,10 @@
 <?php
 session_start();
 require_once "ai_sentiment_engine.php";
+require_once "_dbconfig.php";
 
-// Allow seeder to initialize fresh cloud databases if unseeded or if seed_now is requested
-$is_authenticated = isset($_SESSION['loggedin']) && $_SESSION['loggedin'] === true;
-$has_admin_account = false;
-
-$check_admin_conn = @new mysqli("127.0.0.1", "root", "", "admin");
-if ($check_admin_conn && !$check_admin_conn->connect_error) {
-    $res = $check_admin_conn->query("SELECT COUNT(*) AS c FROM `admin`");
-    if ($res && $res->fetch_assoc()['c'] > 0) {
-        $has_admin_account = true;
-    }
-    $check_admin_conn->close();
-}
-
-if (!$is_authenticated && $has_admin_account && !isset($_GET['auto']) && !isset($_POST['seed_now'])) {
+// Ensure user is logged in as admin/teacher to trigger seeder
+if (!isset($_SESSION['loggedin']) || $_SESSION['loggedin'] !== true) {
     header("Location: login.php");
     exit();
 }
@@ -23,25 +12,51 @@ if (!$is_authenticated && $has_admin_account && !isset($_GET['auto']) && !isset(
 $message = "";
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' || isset($_GET['auto'])) {
-    $host = "127.0.0.1";
-    $username = "root";
-    $password = "";
+    $host = getenv('DB_HOST') ? getenv('DB_HOST') : '127.0.0.1';
+    $username = getenv('DB_USER') ? getenv('DB_USER') : 'root';
+    $password = getenv('DB_PASS') !== false ? getenv('DB_PASS') : '';
+    $single_db = getenv('DB_NAME') ? getenv('DB_NAME') : '';
 
-    // Connect to MySQL server
-    $conn = new mysqli($host, $username, $password);
+    $conn = @new mysqli($host, $username, $password);
+    if ($conn->connect_error) {
+        $conn = @new mysqli('localhost', $username, $password);
+    }
+
     if ($conn->connect_error) {
         die("Connection failed: " . $conn->connect_error);
     }
 
-    // 1. Databases setup
-    $conn->query("CREATE DATABASE IF NOT EXISTS `admin`");
-    $conn->query("CREATE DATABASE IF NOT EXISTS `faculty`");
-    $conn->query("CREATE DATABASE IF NOT EXISTS `student`");
-    $conn->query("CREATE DATABASE IF NOT EXISTS `questions`");
-    $conn->query("CREATE DATABASE IF NOT EXISTS `responses`");
+    // Determine Single DB vs Multi DB mode
+    $is_single_db = false;
 
-    // 2. Admin database setup
-    $conn->select_db("admin");
+    if (!empty($single_db)) {
+        $conn->select_db($single_db);
+        $is_single_db = true;
+    } else {
+        // Try creating multi databases (Works on local XAMPP)
+        $m1 = @$conn->query("CREATE DATABASE IF NOT EXISTS `admin`");
+        $m2 = @$conn->query("CREATE DATABASE IF NOT EXISTS `faculty`");
+        $m3 = @$conn->query("CREATE DATABASE IF NOT EXISTS `student`");
+        $m4 = @$conn->query("CREATE DATABASE IF NOT EXISTS `questions`");
+        $m5 = @$conn->query("CREATE DATABASE IF NOT EXISTS `responses`");
+
+        if (!$m1) {
+            // Cloud provider (TiDB / Aiven / Railway) restricts multi DB creation -> Use current selected DB or create feedback_system
+            @$conn->query("CREATE DATABASE IF NOT EXISTS `feedback_system`");
+            @$conn->select_db("feedback_system");
+            $is_single_db = true;
+        }
+    }
+
+    // Helper for selecting DB in multi-DB mode
+    $selectDb = function($dbname) use ($conn, $is_single_db) {
+        if (!$is_single_db) {
+            @$conn->select_db($dbname);
+        }
+    };
+
+    // 1. Admin Table
+    $selectDb("admin");
     $conn->query("CREATE TABLE IF NOT EXISTS `admin` (
         `id` INT AUTO_INCREMENT PRIMARY KEY,
         `username` VARCHAR(255) NOT NULL UNIQUE,
@@ -49,8 +64,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' || isset($_GET['auto'])) {
     )");
     $conn->query("INSERT INTO `admin` (`username`, `password`) VALUES ('admin', 'admin123') ON DUPLICATE KEY UPDATE `username`=`username`");
 
-    // 3. Faculty database setup
-    $conn->select_db("faculty");
+    // 2. Faculty Table
+    $selectDb("faculty");
     $conn->query("CREATE TABLE IF NOT EXISTS `faculty` (
         `id` INT PRIMARY KEY AUTO_INCREMENT,
         `name` VARCHAR(255) NOT NULL,
@@ -82,8 +97,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' || isset($_GET['auto'])) {
         }
     }
 
-    // 4. Questions database setup
-    $conn->select_db("questions");
+    // 3. Questions Table
+    $selectDb("questions");
     $conn->query("CREATE TABLE IF NOT EXISTS `questions` (
         `id` INT PRIMARY KEY AUTO_INCREMENT,
         `questions` VARCHAR(255) NOT NULL
@@ -107,8 +122,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' || isset($_GET['auto'])) {
         }
     }
 
-    // 5. Student database setup
-    $conn->select_db("student");
+    // 4. Student Table
+    $selectDb("student");
     $conn->query("CREATE TABLE IF NOT EXISTS `student` (
         `id` INT PRIMARY KEY AUTO_INCREMENT,
         `sname` VARCHAR(255) NOT NULL,
@@ -136,8 +151,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' || isset($_GET['auto'])) {
         $stmt->close();
     }
 
-    // 6. Responses database setup & data seeding
-    $conn->select_db("responses");
+    // 5. Responses Tables
+    $selectDb("responses");
     $subjects = ['ajp', 'wt', 'dbms', 'oop'];
     foreach ($subjects as $sub) {
         $table_name = "{$sub}_responses";
@@ -168,7 +183,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' || isset($_GET['auto'])) {
         }
     }
 
-    // 7. Seed Qualitative Comments & AI Sentiments
+    // 6. Qualitative Comments Table
     $conn->query("CREATE TABLE IF NOT EXISTS `feedback_comments` (
         `id` INT PRIMARY KEY AUTO_INCREMENT,
         `subject` VARCHAR(50) NOT NULL,
@@ -215,7 +230,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' || isset($_GET['auto'])) {
 
     $conn->close();
     $message = '<div class="alert alert-success alert-dismissible fade show" role="alert">
-        🎉 <strong>Demo Data Successfully Seeded!</strong> All databases, student records, and feedback charts have been populated.
+        🎉 <strong>Demo Data Successfully Seeded!</strong> All tables and test data have been populated into your database.
         <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
     </div>';
 }
