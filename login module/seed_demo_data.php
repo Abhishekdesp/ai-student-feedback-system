@@ -2,8 +2,20 @@
 session_start();
 require_once "ai_sentiment_engine.php";
 
-// Ensure user is logged in as admin/teacher to trigger seeder
-if (!isset($_SESSION['loggedin']) || $_SESSION['loggedin'] !== true) {
+// Allow seeder to initialize fresh cloud databases if unseeded or if seed_now is requested
+$is_authenticated = isset($_SESSION['loggedin']) && $_SESSION['loggedin'] === true;
+$has_admin_account = false;
+
+$check_admin_conn = @new mysqli("127.0.0.1", "root", "", "admin");
+if ($check_admin_conn && !$check_admin_conn->connect_error) {
+    $res = $check_admin_conn->query("SELECT COUNT(*) AS c FROM `admin`");
+    if ($res && $res->fetch_assoc()['c'] > 0) {
+        $has_admin_account = true;
+    }
+    $check_admin_conn->close();
+}
+
+if (!$is_authenticated && $has_admin_account && !isset($_GET['auto']) && !isset($_POST['seed_now'])) {
     header("Location: login.php");
     exit();
 }
