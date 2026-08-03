@@ -1,5 +1,6 @@
 <?php
 session_start();
+require_once "_dbconfig.php";
 
 // If already logged in, redirect to appropriate home page
 if (isset($_SESSION['loggedin']) && $_SESSION['loggedin'] === true) {
@@ -13,27 +14,17 @@ if (isset($_SESSION['loggedin']) && $_SESSION['loggedin'] === true) {
 }
 
 $alertMessage = '';
-$selectedRole = isset($_POST['role']) ? $_POST['role'] : 'student';
+$selectedRole = isset($_POST['role']) ? $_POST['role'] : 'teacher';
 
 function getDbConnection($dbname) {
-    $hosts = ["127.0.0.1", "localhost"];
-    foreach ($hosts as $host) {
-        try {
-            $conn = @new mysqli($host, "root", "", $dbname);
-            if ($conn && !$conn->connect_error) {
-                return $conn;
-            }
-        } catch (Throwable $e) {
-            // connection attempt failed, try next
-        }
-    }
-    return null;
+    return getGlobalDbConnection($dbname);
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $username = isset($_POST['username']) ? trim($_POST['username']) : '';
     $password = isset($_POST['password']) ? trim($_POST['password']) : '';
-    $role = isset($_POST['role']) ? trim($_POST['role']) : 'student';
+    $role = isset($_POST['role']) ? $_POST['role'] : 'teacher';
+    $selectedRole = $role;
 
     if (empty($username) || empty($password)) {
         $alertMessage = '<div class="alert alert-danger alert-dismissible fade show" role="alert">
@@ -46,7 +37,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         // Try Student login if student role chosen or auto
         if ($role === 'student' || $role === 'auto') {
             $conn_s = getDbConnection("student");
-            if ($conn_s) {
+            if ($conn_s && !$conn_s->connect_error) {
                 $u_s = $conn_s->real_escape_string($username);
                 $p_s = $conn_s->real_escape_string($password);
                 $sql_s = "SELECT * FROM student WHERE sname='$u_s' AND password='$p_s'";
@@ -68,7 +59,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         // Try Teacher / Admin login if teacher role chosen or auto
         if ($role === 'teacher' || $role === 'auto') {
             $conn_a = getDbConnection("admin");
-            if ($conn_a) {
+            if ($conn_a && !$conn_a->connect_error) {
                 $u_a = $conn_a->real_escape_string($username);
                 $p_a = $conn_a->real_escape_string($password);
                 $sql_a = "SELECT * FROM admin WHERE username='$u_a' AND password='$p_a'";
@@ -102,131 +93,96 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Student Feedback System - Login</title>
+  <!-- Bootstrap 4 -->
   <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
   <style>
     body {
       background-color: #f8f9fa;
       color: #333;
       min-height: 100vh;
-    }
-    .navbar {
-      background-color: black !important;
-    }
-    .navbar-brand {
-      color: #fff !important;
-      font-weight: 600;
-    }
-    .login-box {
-      max-width: 420px;
-      margin: 60px auto;
-      padding: 30px;
-      border: 2px solid #000;
-      border-radius: 10px;
-      background-color: #ffffff;
-      box-shadow: 0 6px 15px rgba(0, 0, 0, 0.15);
-    }
-    .role-toggle-group {
       display: flex;
-      margin-bottom: 25px;
-      border: 1px solid #ced4da;
-      border-radius: 6px;
-      overflow: hidden;
+      align-items: center;
+      justify-content: center;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
     }
-    .role-toggle-btn {
-      flex: 1;
-      border: none;
-      padding: 10px;
-      background-color: #f8f9fa;
-      color: #495057;
-      font-weight: 600;
-      font-size: 0.95rem;
-      cursor: pointer;
-      transition: all 0.2s ease-in-out;
+    .login-card {
+      background-color: #ffffff;
+      border: 1px solid #e2e8f0;
+      border-radius: 12px;
+      padding: 36px;
+      box-shadow: 0 4px 15px rgba(0,0,0,0.05);
+      width: 100%;
+      max-width: 420px;
     }
-    .role-toggle-btn.active {
-      background-color: #007bff;
-      color: #ffffff;
-    }
-    .form-group label {
-      font-weight: 600;
-      color: #212529;
-    }
-    .btn-submit {
+    .role-btn-group .btn {
       font-weight: 600;
       padding: 10px;
-      font-size: 1rem;
     }
   </style>
 </head>
 <body>
 
-<!-- Admin-Matching Navbar -->
-<nav class="navbar navbar-expand-lg navbar-dark">
-  <a class="navbar-brand" href="#">Student Feedback System</a>
-</nav>
+<div class="login-card">
+  <div class="text-center mb-4">
+    <h3 class="font-weight-bold" id="formTitle">Admin / Teacher Login</h3>
+  </div>
 
-<div class="container">
-  <div class="login-box">
-    <h2 class="text-center mb-4 font-weight-bold" id="login-title">Portal Login</h2>
+  <?php echo $alertMessage; ?>
 
-    <?php echo $alertMessage; ?>
+  <form action="login.php" method="post" id="loginForm">
+    <input type="hidden" name="role" id="roleInput" value="<?php echo htmlspecialchars($selectedRole); ?>">
 
-    <div class="role-toggle-group">
-      <button type="button" class="role-toggle-btn <?php echo ($selectedRole === 'student') ? 'active' : ''; ?>" id="btn-student" onclick="setRole('student')">Student</button>
-      <button type="button" class="role-toggle-btn <?php echo ($selectedRole === 'teacher') ? 'active' : ''; ?>" id="btn-teacher" onclick="setRole('teacher')">Teacher / Admin</button>
+    <div class="role-btn-group btn-group btn-group-toggle w-100 mb-4" data-toggle="buttons">
+      <label class="btn btn-outline-primary <?php echo ($selectedRole === 'student') ? 'active' : ''; ?>" id="studentTab">
+        <input type="radio" name="role_toggle" value="student" autocomplete="off" <?php echo ($selectedRole === 'student') ? 'checked' : ''; ?>> Student
+      </label>
+      <label class="btn btn-outline-primary <?php echo ($selectedRole === 'teacher') ? 'active' : ''; ?>" id="teacherTab">
+        <input type="radio" name="role_toggle" value="teacher" autocomplete="off" <?php echo ($selectedRole === 'teacher') ? 'checked' : ''; ?>> Teacher / Admin
+      </label>
     </div>
 
-    <form method="post" action="login.php">
-      <input type="hidden" name="role" id="role-input" value="<?php echo htmlspecialchars($selectedRole); ?>">
+    <div class="form-group">
+      <label for="username" id="usernameLabel" class="font-weight-bold">Teacher / Admin Username:</label>
+      <input type="text" class="form-control" name="username" id="username" placeholder="Enter username" required>
+    </div>
 
-      <div class="form-group">
-        <label for="username" id="username-label">Username:</label>
-        <input type="text" class="form-control" id="username" name="username" placeholder="Enter username" required autofocus>
-      </div>
+    <div class="form-group mb-4">
+      <label for="password" class="font-weight-bold">Password:</label>
+      <input type="password" class="form-control" name="password" id="password" placeholder="Enter password" required>
+    </div>
 
-      <div class="form-group">
-        <label for="password">Password:</label>
-        <input type="password" class="form-control" id="password" name="password" placeholder="Enter password" required>
-      </div>
-
-      <button type="submit" class="btn btn-primary btn-block btn-submit" id="submit-btn">Submit</button>
-    </form>
-  </div>
+    <button type="submit" class="btn btn-primary btn-block py-2 font-weight-bold" id="submitBtn">
+      Sign In as Teacher
+    </button>
+  </form>
 </div>
 
 <script src="https://code.jquery.com/jquery-3.5.1.slim.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.5.2/dist/umd/popper.min.js"></script>
-<script src="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@4.5.2/dist/js/bootstrap.bundle.min.js"></script>
 
 <script>
-  function setRole(role) {
-    document.getElementById('role-input').value = role;
-    const btnStudent = document.getElementById('btn-student');
-    const btnTeacher = document.getElementById('btn-teacher');
-    const loginTitle = document.getElementById('login-title');
-    const submitBtn = document.getElementById('submit-btn');
-    const usernameLabel = document.getElementById('username-label');
-
-    if (role === 'student') {
-      btnStudent.classList.add('active');
-      btnTeacher.classList.remove('active');
-      loginTitle.innerText = 'Student Login';
-      submitBtn.innerText = 'Sign In as Student';
-      usernameLabel.innerText = 'Student Username:';
-    } else {
-      btnTeacher.classList.add('active');
-      btnStudent.classList.remove('active');
-      loginTitle.innerText = 'Admin / Teacher Login';
-      submitBtn.innerText = 'Sign In as Teacher';
-      usernameLabel.innerText = 'Teacher / Admin Username:';
+  $(document).ready(function() {
+    function updateRoleUI(role) {
+      $('#roleInput').val(role);
+      if (role === 'student') {
+        $('#formTitle').text('Student Login');
+        $('#usernameLabel').text('Student Name:');
+        $('#username').attr('placeholder', 'e.g. Aarav');
+        $('#submitBtn').text('Sign In as Student');
+      } else {
+        $('#formTitle').text('Admin / Teacher Login');
+        $('#usernameLabel').text('Teacher / Admin Username:');
+        $('#username').attr('placeholder', 'admin');
+        $('#submitBtn').text('Sign In as Teacher');
+      }
     }
-  }
 
-  // Initialize role toggle UI
-  document.addEventListener('DOMContentLoaded', function() {
-    setRole('<?php echo htmlspecialchars($selectedRole); ?>');
+    $('input[name="role_toggle"]').change(function() {
+      updateRoleUI($(this).val());
+    });
+
+    updateRoleUI('<?php echo $selectedRole; ?>');
   });
 </script>
-
 </body>
 </html>
