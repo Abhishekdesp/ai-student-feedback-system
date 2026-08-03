@@ -5,6 +5,8 @@
  * Supports Offline NLP Lexicon Analysis with an Optional External OpenAI / Gemini API Toggle.
  */
 
+require_once "_dbconfig.php";
+
 class AISentimentEngine {
 
     // Toggle for external AI API (Set to true and provide API key to enable live cloud AI calls)
@@ -40,7 +42,6 @@ class AISentimentEngine {
      * Analyze text sentiment (Toggles between External API and Offline Lexicon NLP)
      */
     public static function analyzeSentiment($text) {
-        // Attempt External Cloud AI API call if enabled and API key is provided
         if (self::$use_external_ai && !empty(self::$api_key)) {
             $cloud_result = self::analyzeWithCloudAI($text);
             if ($cloud_result !== null) {
@@ -48,7 +49,6 @@ class AISentimentEngine {
             }
         }
 
-        // Offline Lexicon NLP Analysis Engine (Fallback)
         return self::analyzeOffline($text);
     }
 
@@ -186,7 +186,6 @@ class AISentimentEngine {
                 }
             }
         } catch (Throwable $e) {
-            // Graceful fallback to offline NLP
             return null;
         }
 
@@ -197,13 +196,10 @@ class AISentimentEngine {
      * Generate AI Executive Summary and Sentiment Distribution for a Subject
      */
     public static function getFacultyAiSummary($subject, $db_conn = null) {
-        $host = "127.0.0.1";
-        $username = "root";
-        $password = "";
         $close_conn = false;
 
         if (!$db_conn) {
-            $db_conn = @new mysqli($host, $username, $password, "responses");
+            $db_conn = getGlobalDbConnection("responses");
             $close_conn = true;
         }
 
@@ -211,7 +207,7 @@ class AISentimentEngine {
             return null;
         }
 
-        $db_conn->query("CREATE TABLE IF NOT EXISTS `feedback_comments` (
+        @$db_conn->query("CREATE TABLE IF NOT EXISTS `feedback_comments` (
             `id` INT PRIMARY KEY AUTO_INCREMENT,
             `subject` VARCHAR(50) NOT NULL,
             `comment` TEXT NOT NULL,
@@ -221,7 +217,7 @@ class AISentimentEngine {
         )");
 
         $sub_clean = $db_conn->real_escape_string($subject);
-        $res = $db_conn->query("SELECT * FROM `feedback_comments` WHERE UPPER(subject) = UPPER('$sub_clean') ORDER BY id DESC");
+        $res = @$db_conn->query("SELECT * FROM `feedback_comments` WHERE UPPER(subject) = UPPER('$sub_clean') ORDER BY id DESC");
 
         $comments = [];
         $pos_cnt = 0;
