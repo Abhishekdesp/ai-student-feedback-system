@@ -1,5 +1,6 @@
 <?php
 session_start();
+require_once "_dbconfig.php";
 
 // Check if the student is logged in
 if (!isset($_SESSION['username'])) {
@@ -15,14 +16,14 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
         $selectedSubject = $_POST['subjectSelect'];
         $username = $_SESSION['username'];
         
-        $conn_student = new mysqli("127.0.0.1", "root", "", "student");
-        if (!$conn_student->connect_error) {
+        $conn_student = getGlobalDbConnection("student");
+        if ($conn_student && !$conn_student->connect_error) {
             $check_feedback_query = "SELECT {$selectedSubject}_submitted FROM student WHERE sname = '$username'";
-            $check_feedback_result = $conn_student->query($check_feedback_query);
+            $check_feedback_result = @$conn_student->query($check_feedback_query);
 
             if ($check_feedback_result && $check_feedback_result->num_rows > 0) {
                 $row = $check_feedback_result->fetch_assoc();
-                $feedback_submitted = $row["{$selectedSubject}_submitted"];
+                $feedback_submitted = isset($row["{$selectedSubject}_submitted"]) ? $row["{$selectedSubject}_submitted"] : 0;
                 
                 if ($feedback_submitted == 1) {
                     $alertMessage = '<div class="alert alert-warning alert-dismissible fade show mb-4" role="alert">
@@ -35,10 +36,9 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
                     exit();
                 }
             } else {
-                $alertMessage = '<div class="alert alert-danger alert-dismissible fade show mb-4" role="alert">
-                    Error checking feedback status. Please try again.
-                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-                </div>';
+                $_SESSION['selected_subject'] = $selectedSubject;
+                header("Location: shomepage.php");
+                exit();
             }
             $conn_student->close();
         }
@@ -50,24 +50,24 @@ $studentName = $_SESSION['username'];
 $studentYear = isset($_SESSION['year']) ? $_SESSION['year'] : 'First';
 
 // Fetch available faculty and submission status
-$conn_faculty = new mysqli("127.0.0.1", "root", "", "faculty");
+$conn_faculty = getGlobalDbConnection("faculty");
 $faculty_cards = [];
 
-if (!$conn_faculty->connect_error) {
+if ($conn_faculty && !$conn_faculty->connect_error) {
     $stmt = $conn_faculty->prepare("SELECT id, name, designation, subject, status FROM faculty WHERE year = ?");
     if ($stmt) {
         $stmt->bind_param("s", $studentYear);
         $stmt->execute();
         $res = $stmt->get_result();
         
-        $conn_st = new mysqli("127.0.0.1", "root", "", "student");
+        $conn_st = getGlobalDbConnection("student");
         while ($row = $res->fetch_assoc()) {
             $sub = $row['subject'];
             $is_submitted = 0;
             if ($conn_st && !$conn_st->connect_error) {
-                $c_res = $conn_st->query("SELECT {$sub}_submitted FROM student WHERE sname = '$studentName'");
+                $c_res = @$conn_st->query("SELECT {$sub}_submitted FROM student WHERE sname = '$studentName'");
                 if ($c_res && $c_row = $c_res->fetch_assoc()) {
-                    $is_submitted = intval($c_row["{$sub}_submitted"]);
+                    $is_submitted = isset($c_row["{$sub}_submitted"]) ? intval($c_row["{$sub}_submitted"]) : 0;
                 }
             }
             $row['is_submitted'] = $is_submitted;

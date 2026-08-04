@@ -1,17 +1,15 @@
 <?php
 session_start();
+require_once "_dbconfig.php";
+
 if (!isset($_SESSION['loggedin']) || $_SESSION['loggedin'] !== true) {
     header("Location: login.php");
     exit();
 }
 
-$host = "127.0.0.1";
-$username = "root";
-$password = "";
-
-$conn_faculty = new mysqli($host, $username, $password, "faculty");
-if ($conn_faculty->connect_error) {
-    die("Connection failed: " . $conn_faculty->connect_error);
+$conn_faculty = getGlobalDbConnection("faculty");
+if (!$conn_faculty || $conn_faculty->connect_error) {
+    die("Connection failed to faculty database.");
 }
 
 $message = "";
@@ -52,12 +50,13 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['addFaculty'])) {
                            VALUES ('$new_id', '$name', '$designation', '$email', '$scheme', '$semester', '$mobile', '$year', '$subject', 1)";
 
             if ($conn_faculty->query($insert_sql) === TRUE) {
-                $conn_resp = new mysqli($host, $username, $password, "responses");
-                if (!$conn_resp->connect_error) {
+                $conn_resp = getGlobalDbConnection("responses");
+                if ($conn_resp && !$conn_resp->connect_error) {
                     $lower_sub = strtolower($subject);
                     $tbl_name = "{$lower_sub}_responses";
                     $create_tbl = "CREATE TABLE IF NOT EXISTS `$tbl_name` (
                         id INT PRIMARY KEY AUTO_INCREMENT,
+                        Questions VARCHAR(255) DEFAULT '',
                         excellent INT DEFAULT 0,
                         very_good INT DEFAULT 0,
                         good INT DEFAULT 0,
@@ -70,14 +69,14 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['addFaculty'])) {
                     $cnt = $conn_resp->query("SELECT COUNT(*) AS c FROM `$tbl_name`")->fetch_assoc()['c'];
                     if ($cnt == 0) {
                         for ($qi = 1; $qi <= 5; $qi++) {
-                            $conn_resp->query("INSERT INTO `$tbl_name` (id, excellent, very_good, good, poor, bad, Counter) VALUES ($qi, 0, 0, 0, 0, 0, 0)");
+                            $conn_resp->query("INSERT INTO `$tbl_name` (id, Questions, excellent, very_good, good, poor, bad, Counter) VALUES ($qi, 'Question $qi', 0, 0, 0, 0, 0, 0)");
                         }
                     }
 
-                    $conn_st = new mysqli($host, $username, $password, "student");
-                    if (!$conn_st->connect_error) {
+                    $conn_st = getGlobalDbConnection("student");
+                    if ($conn_st && !$conn_st->connect_error) {
                         $col_name = "{$subject}_submitted";
-                        $conn_st->query("ALTER TABLE student ADD COLUMN IF NOT EXISTS `$col_name` INT DEFAULT 0");
+                        @$conn_st->query("ALTER TABLE student ADD COLUMN `$col_name` INT DEFAULT 0");
                         $conn_st->close();
                     }
 

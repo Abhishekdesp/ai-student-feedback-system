@@ -1,6 +1,7 @@
 <?php
 session_start();
 require_once "ai_sentiment_engine.php";
+require_once "_dbconfig.php";
 
 // Check if the student is logged in
 if (!isset($_SESSION['username'])) {
@@ -12,23 +13,23 @@ $alertMessage = "";
 
 // Check if the feedback form has been submitted
 if ($_SERVER["REQUEST_METHOD"] == "POST") {
-    $conn_responses = new mysqli("127.0.0.1", "root", "", "responses");
+    $conn_responses = getGlobalDbConnection("responses");
 
-    if ($conn_responses->connect_error) {
-        die("Connection failed: " . $conn_responses->connect_error);
+    if (!$conn_responses || $conn_responses->connect_error) {
+        die("Connection failed to database.");
     }
 
     $subject = isset($_SESSION['selected_subject']) ? $_SESSION['selected_subject'] : '';
 
     if (!empty($subject)) {
         $username = $_SESSION['username'];
-        $conn_student = new mysqli("127.0.0.1", "root", "", "student");
+        $conn_student = getGlobalDbConnection("student");
         $check_feedback_query = "SELECT {$subject}_submitted FROM student WHERE sname = '$username'";
-        $check_feedback_result = $conn_student->query($check_feedback_query);
+        $check_feedback_result = @$conn_student->query($check_feedback_query);
 
         if ($check_feedback_result && $check_feedback_result->num_rows > 0) {
             $row = $check_feedback_result->fetch_assoc();
-            $feedback_submitted = $row["{$subject}_submitted"];
+            $feedback_submitted = isset($row["{$subject}_submitted"]) ? $row["{$subject}_submitted"] : 0;
 
             if ($feedback_submitted == 1) {
                 $alertMessage = '<div class="alert alert-warning alert-dismissible fade show mb-4" role="alert">
@@ -39,9 +40,9 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
                 $conn_student->close();
             } else {
                 $update_feedback_query = "UPDATE student SET {$subject}_submitted = 1 WHERE sname = '$username'";
-                $update_feedback_result = $conn_student->query($update_feedback_query);
+                @$conn_student->query($update_feedback_query);
 
-                if ($update_feedback_result && isset($_POST['response']) && is_array($_POST['response'])) {
+                if (isset($_POST['response']) && is_array($_POST['response'])) {
                     foreach ($_POST['response'] as $question_id => $response) {
                         switch ($response) {
                             case 5: $column = 'excellent'; break;
@@ -53,13 +54,13 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
                         }
 
                         $subject_responses_table = $subject . "_responses";
-                        $update_query = "UPDATE $subject_responses_table SET $column = $column + 1 WHERE id = $question_id";
-                        $conn_responses->query($update_query);
+                        $update_query = "UPDATE `$subject_responses_table` SET `$column` = `$column` + 1 WHERE id = $question_id";
+                        @$conn_responses->query($update_query);
                     }
 
                     $subject_responses_table = "{$subject}_responses";
-                    $update_counter_query = "UPDATE $subject_responses_table SET `Counter` = `Counter` + 1 WHERE id = 1";
-                    $conn_responses->query($update_counter_query);
+                    $update_counter_query = "UPDATE `$subject_responses_table` SET `Counter` = `Counter` + 1 WHERE id = 1";
+                    @$conn_responses->query($update_counter_query);
 
                     // Process Qualitative Student Comment & AI Sentiment
                     if (isset($_POST['user_comment']) && !empty(trim($_POST['user_comment']))) {
@@ -68,7 +69,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
                         $sent = $analysis['sentiment'];
                         $score = $analysis['score'];
 
-                        $conn_responses->query("CREATE TABLE IF NOT EXISTS `feedback_comments` (
+                        @$conn_responses->query("CREATE TABLE IF NOT EXISTS `feedback_comments` (
                             `id` INT PRIMARY KEY AUTO_INCREMENT,
                             `subject` VARCHAR(50) NOT NULL,
                             `comment` TEXT NOT NULL,
@@ -79,7 +80,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
 
                         $esc_sub = $conn_responses->real_escape_string($subject);
                         $esc_cmt = $conn_responses->real_escape_string($user_cmt);
-                        $conn_responses->query("INSERT INTO `feedback_comments` (`subject`, `comment`, `sentiment`, `sentiment_score`) VALUES ('$esc_sub', '$esc_cmt', '$sent', $score)");
+                        @$conn_responses->query("INSERT INTO `feedback_comments` (`subject`, `comment`, `sentiment`, `sentiment_score`) VALUES ('$esc_sub', '$esc_cmt', '$sent', $score)");
                     }
 
                     $alertMessage = '<div class="alert alert-success alert-dismissible fade show mb-4" role="alert">
@@ -186,11 +187,11 @@ $selectedSubject = isset($_SESSION['selected_subject']) ? $_SESSION['selected_su
 
         <form id="surveyForm" action="<?php echo htmlspecialchars($_SERVER["PHP_SELF"]); ?>" method="post" onsubmit="return validateForm()">
             <?php
-            $conn_q = new mysqli("127.0.0.1", "root", "", "questions");
+            $conn_q = getGlobalDbConnection("questions");
 
-            if (!$conn_q->connect_error) {
+            if ($conn_q && !$conn_q->connect_error) {
                 $sql_q = "SELECT * FROM questions";
-                $res_q = $conn_q->query($sql_q);
+                $res_q = @$conn_q->query($sql_q);
 
                 if ($res_q && $res_q->num_rows > 0) {
                     $q_index = 1;

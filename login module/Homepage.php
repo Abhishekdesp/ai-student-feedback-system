@@ -1,20 +1,17 @@
 <?php
 session_start();
 require_once "ai_sentiment_engine.php";
+require_once "_dbconfig.php";
 
 if (!isset($_SESSION['loggedin']) || $_SESSION['loggedin'] !== true) {
     header("Location: login.php");
     exit();
 }
 
-$host = "127.0.0.1";
-$username = "root";
-$password = "";
-
 // Load settings from database if available
-$conn_sett = @new mysqli($host, $username, $password, "admin");
+$conn_sett = getGlobalDbConnection("admin");
 if ($conn_sett && !$conn_sett->connect_error) {
-    $res_s = $conn_sett->query("SELECT * FROM `system_settings`");
+    $res_s = @$conn_sett->query("SELECT * FROM `system_settings`");
     if ($res_s) {
         $u_ext = false; $p_ext = 'gemini'; $k_ext = '';
         while ($r = $res_s->fetch_assoc()) {
@@ -33,33 +30,33 @@ $total_students = 0;
 $total_questions = 0;
 $total_responses = 0;
 
-$conn_faculty = @new mysqli($host, $username, $password, "faculty");
+$conn_faculty = getGlobalDbConnection("faculty");
 if ($conn_faculty && !$conn_faculty->connect_error) {
-    $res = $conn_faculty->query("SELECT COUNT(*) AS cnt FROM faculty");
+    $res = @$conn_faculty->query("SELECT COUNT(*) AS cnt FROM faculty");
     if ($res) { $total_faculty = $res->fetch_assoc()['cnt']; }
     $conn_faculty->close();
 }
 
-$conn_student = @new mysqli($host, $username, $password, "student");
+$conn_student = getGlobalDbConnection("student");
 if ($conn_student && !$conn_student->connect_error) {
-    $res = $conn_student->query("SELECT COUNT(*) AS cnt FROM student");
+    $res = @$conn_student->query("SELECT COUNT(*) AS cnt FROM student");
     if ($res) { $total_students = $res->fetch_assoc()['cnt']; }
     $conn_student->close();
 }
 
-$conn_q = @new mysqli($host, $username, $password, "questions");
+$conn_q = getGlobalDbConnection("questions");
 if ($conn_q && !$conn_q->connect_error) {
-    $res = $conn_q->query("SELECT COUNT(*) AS cnt FROM questions");
+    $res = @$conn_q->query("SELECT COUNT(*) AS cnt FROM questions");
     if ($res) { $total_questions = $res->fetch_assoc()['cnt']; }
     $conn_q->close();
 }
 
 // Connect to responses DB to build subject reports
-$conn_responses = @new mysqli($host, $username, $password, "responses");
+$conn_responses = getGlobalDbConnection("responses");
 $subject_data = [];
 
 if ($conn_responses && !$conn_responses->connect_error) {
-    $tables_res = $conn_responses->query("SELECT table_name FROM information_schema.tables WHERE table_schema = 'responses' AND table_name LIKE '%_responses'");
+    $tables_res = @$conn_responses->query("SELECT table_name FROM information_schema.tables WHERE (table_schema = 'responses' OR table_schema = DATABASE()) AND table_name LIKE '%_responses'");
     
     if ($tables_res && $tables_res->num_rows > 0) {
         while ($t_row = $tables_res->fetch_assoc()) {
@@ -68,9 +65,9 @@ if ($conn_responses && !$conn_responses->connect_error) {
             
             $faculty_name = "Unassigned";
             $faculty_status = 1;
-            $conn_f = @new mysqli($host, $username, $password, "faculty");
+            $conn_f = getGlobalDbConnection("faculty");
             if ($conn_f && !$conn_f->connect_error) {
-                $f_res = $conn_f->query("SELECT name, status FROM faculty WHERE subject = '$subject_name'");
+                $f_res = @$conn_f->query("SELECT name, status FROM faculty WHERE subject = '$subject_name'");
                 if ($f_res && $f_res->num_rows > 0) {
                     $f_data = $f_res->fetch_assoc();
                     $faculty_name = $f_data['name'];
@@ -79,7 +76,7 @@ if ($conn_responses && !$conn_responses->connect_error) {
                 $conn_f->close();
             }
 
-            $agg_res = $conn_responses->query("SELECT 
+            $agg_res = @$conn_responses->query("SELECT 
                 SUM(excellent) AS total_ex, 
                 SUM(very_good) AS total_vg, 
                 SUM(good) AS total_g, 
