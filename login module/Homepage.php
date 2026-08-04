@@ -26,10 +26,7 @@ if ($conn_sett && !$conn_sett->connect_error) {
             }
             AISentimentEngine::setExternalAiConfig($u_ext, $p_ext, $k_ext);
         }
-    } catch (Throwable $e) {
-        // Table not ready yet, continue gracefully
-    }
-    $conn_sett->close();
+    } catch (Throwable $e) {}
 }
 
 // Fetch Overview Metrics
@@ -44,7 +41,6 @@ if ($conn_faculty && !$conn_faculty->connect_error) {
         $res = @$conn_faculty->query("SELECT COUNT(*) AS cnt FROM faculty");
         if ($res) { $total_faculty = $res->fetch_assoc()['cnt']; }
     } catch (Throwable $e) {}
-    $conn_faculty->close();
 }
 
 $conn_student = getGlobalDbConnection("student");
@@ -53,7 +49,6 @@ if ($conn_student && !$conn_student->connect_error) {
         $res = @$conn_student->query("SELECT COUNT(*) AS cnt FROM student");
         if ($res) { $total_students = $res->fetch_assoc()['cnt']; }
     } catch (Throwable $e) {}
-    $conn_student->close();
 }
 
 $conn_q = getGlobalDbConnection("questions");
@@ -62,7 +57,6 @@ if ($conn_q && !$conn_q->connect_error) {
         $res = @$conn_q->query("SELECT COUNT(*) AS cnt FROM questions");
         if ($res) { $total_questions = $res->fetch_assoc()['cnt']; }
     } catch (Throwable $e) {}
-    $conn_q->close();
 }
 
 // Connect to responses DB to build subject reports
@@ -90,7 +84,6 @@ if ($conn_responses && !$conn_responses->connect_error) {
                             $faculty_status = intval($f_data['status']);
                         }
                     } catch (Throwable $e) {}
-                    $conn_f->close();
                 }
 
                 $agg_res = @$conn_responses->query("SELECT 
@@ -115,7 +108,7 @@ if ($conn_responses && !$conn_responses->connect_error) {
                     $weighted_score = (5 * $ex) + (4 * $vg) + (3 * $g) + (2 * $p) + (1 * $b);
                     $avg_rating = ($total_votes > 0) ? round($weighted_score / $total_votes, 2) : 0;
 
-                    // AI Sentiment Analysis for this subject
+                    // AI Sentiment Analysis for this subject (Reuses existing active DB connection)
                     $ai_summary = AISentimentEngine::getFacultyAiSummary($subject_name, $conn_responses);
 
                     $subject_data[] = [
