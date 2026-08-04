@@ -11,15 +11,23 @@ if (!isset($_SESSION['loggedin']) || $_SESSION['loggedin'] !== true) {
 // Load settings from database if available
 $conn_sett = getGlobalDbConnection("admin");
 if ($conn_sett && !$conn_sett->connect_error) {
-    $res_s = @$conn_sett->query("SELECT * FROM `system_settings`");
-    if ($res_s) {
-        $u_ext = false; $p_ext = 'gemini'; $k_ext = '';
-        while ($r = $res_s->fetch_assoc()) {
-            if ($r['setting_name'] === 'use_external_ai') $u_ext = ($r['setting_value'] === '1');
-            if ($r['setting_name'] === 'ai_provider') $p_ext = $r['setting_value'];
-            if ($r['setting_name'] === 'ai_api_key') $k_ext = $r['setting_value'];
+    try {
+        @$conn_sett->query("CREATE TABLE IF NOT EXISTS `system_settings` (
+            `setting_name` VARCHAR(100) PRIMARY KEY,
+            `setting_value` TEXT NOT NULL
+        )");
+        $res_s = @$conn_sett->query("SELECT * FROM `system_settings`");
+        if ($res_s) {
+            $u_ext = false; $p_ext = 'gemini'; $k_ext = '';
+            while ($r = $res_s->fetch_assoc()) {
+                if ($r['setting_name'] === 'use_external_ai') $u_ext = ($r['setting_value'] === '1');
+                if ($r['setting_name'] === 'ai_provider') $p_ext = $r['setting_value'];
+                if ($r['setting_name'] === 'ai_api_key') $k_ext = $r['setting_value'];
+            }
+            AISentimentEngine::setExternalAiConfig($u_ext, $p_ext, $k_ext);
         }
-        AISentimentEngine::setExternalAiConfig($u_ext, $p_ext, $k_ext);
+    } catch (Throwable $e) {
+        // Table not ready yet, continue gracefully
     }
     $conn_sett->close();
 }
@@ -32,22 +40,28 @@ $total_responses = 0;
 
 $conn_faculty = getGlobalDbConnection("faculty");
 if ($conn_faculty && !$conn_faculty->connect_error) {
-    $res = @$conn_faculty->query("SELECT COUNT(*) AS cnt FROM faculty");
-    if ($res) { $total_faculty = $res->fetch_assoc()['cnt']; }
+    try {
+        $res = @$conn_faculty->query("SELECT COUNT(*) AS cnt FROM faculty");
+        if ($res) { $total_faculty = $res->fetch_assoc()['cnt']; }
+    } catch (Throwable $e) {}
     $conn_faculty->close();
 }
 
 $conn_student = getGlobalDbConnection("student");
 if ($conn_student && !$conn_student->connect_error) {
-    $res = @$conn_student->query("SELECT COUNT(*) AS cnt FROM student");
-    if ($res) { $total_students = $res->fetch_assoc()['cnt']; }
+    try {
+        $res = @$conn_student->query("SELECT COUNT(*) AS cnt FROM student");
+        if ($res) { $total_students = $res->fetch_assoc()['cnt']; }
+    } catch (Throwable $e) {}
     $conn_student->close();
 }
 
 $conn_q = getGlobalDbConnection("questions");
 if ($conn_q && !$conn_q->connect_error) {
-    $res = @$conn_q->query("SELECT COUNT(*) AS cnt FROM questions");
-    if ($res) { $total_questions = $res->fetch_assoc()['cnt']; }
+    try {
+        $res = @$conn_q->query("SELECT COUNT(*) AS cnt FROM questions");
+        if ($res) { $total_questions = $res->fetch_assoc()['cnt']; }
+    } catch (Throwable $e) {}
     $conn_q->close();
 }
 
@@ -56,68 +70,72 @@ $conn_responses = getGlobalDbConnection("responses");
 $subject_data = [];
 
 if ($conn_responses && !$conn_responses->connect_error) {
-    $tables_res = @$conn_responses->query("SELECT table_name FROM information_schema.tables WHERE (table_schema = 'responses' OR table_schema = DATABASE()) AND table_name LIKE '%_responses'");
-    
-    if ($tables_res && $tables_res->num_rows > 0) {
-        while ($t_row = $tables_res->fetch_assoc()) {
-            $table_name = $t_row['table_name'];
-            $subject_name = strtoupper(substr($table_name, 0, strpos($table_name, '_responses')));
-            
-            $faculty_name = "Unassigned";
-            $faculty_status = 1;
-            $conn_f = getGlobalDbConnection("faculty");
-            if ($conn_f && !$conn_f->connect_error) {
-                $f_res = @$conn_f->query("SELECT name, status FROM faculty WHERE subject = '$subject_name'");
-                if ($f_res && $f_res->num_rows > 0) {
-                    $f_data = $f_res->fetch_assoc();
-                    $faculty_name = $f_data['name'];
-                    $faculty_status = intval($f_data['status']);
+    try {
+        $tables_res = @$conn_responses->query("SELECT table_name FROM information_schema.tables WHERE (table_schema = 'responses' OR table_schema = DATABASE()) AND table_name LIKE '%_responses'");
+        
+        if ($tables_res && $tables_res->num_rows > 0) {
+            while ($t_row = $tables_res->fetch_assoc()) {
+                $table_name = $t_row['table_name'];
+                $subject_name = strtoupper(substr($table_name, 0, strpos($table_name, '_responses')));
+                
+                $faculty_name = "Unassigned";
+                $faculty_status = 1;
+                $conn_f = getGlobalDbConnection("faculty");
+                if ($conn_f && !$conn_f->connect_error) {
+                    try {
+                        $f_res = @$conn_f->query("SELECT name, status FROM faculty WHERE subject = '$subject_name'");
+                        if ($f_res && $f_res->num_rows > 0) {
+                            $f_data = $f_res->fetch_assoc();
+                            $faculty_name = $f_data['name'];
+                            $faculty_status = intval($f_data['status']);
+                        }
+                    } catch (Throwable $e) {}
+                    $conn_f->close();
                 }
-                $conn_f->close();
-            }
 
-            $agg_res = @$conn_responses->query("SELECT 
-                SUM(excellent) AS total_ex, 
-                SUM(very_good) AS total_vg, 
-                SUM(good) AS total_g, 
-                SUM(poor) AS total_p, 
-                SUM(bad) AS total_b,
-                MAX(Counter) AS total_submissions
-                FROM `$table_name`");
+                $agg_res = @$conn_responses->query("SELECT 
+                    SUM(excellent) AS total_ex, 
+                    SUM(very_good) AS total_vg, 
+                    SUM(good) AS total_g, 
+                    SUM(poor) AS total_p, 
+                    SUM(bad) AS total_b,
+                    MAX(Counter) AS total_submissions
+                    FROM `$table_name`");
 
-            if ($agg_res && $agg_row = $agg_res->fetch_assoc()) {
-                $ex = intval($agg_row['total_ex']);
-                $vg = intval($agg_row['total_vg']);
-                $g = intval($agg_row['total_g']);
-                $p = intval($agg_row['total_p']);
-                $b = intval($agg_row['total_b']);
-                $submissions = intval($agg_row['total_submissions']);
-                $total_responses += $submissions;
+                if ($agg_res && $agg_row = $agg_res->fetch_assoc()) {
+                    $ex = intval($agg_row['total_ex']);
+                    $vg = intval($agg_row['total_vg']);
+                    $g = intval($agg_row['total_g']);
+                    $p = intval($agg_row['total_p']);
+                    $b = intval($agg_row['total_b']);
+                    $submissions = intval($agg_row['total_submissions']);
+                    $total_responses += $submissions;
 
-                $total_votes = $ex + $vg + $g + $p + $b;
-                $weighted_score = (5 * $ex) + (4 * $vg) + (3 * $g) + (2 * $p) + (1 * $b);
-                $avg_rating = ($total_votes > 0) ? round($weighted_score / $total_votes, 2) : 0;
+                    $total_votes = $ex + $vg + $g + $p + $b;
+                    $weighted_score = (5 * $ex) + (4 * $vg) + (3 * $g) + (2 * $p) + (1 * $b);
+                    $avg_rating = ($total_votes > 0) ? round($weighted_score / $total_votes, 2) : 0;
 
-                // AI Sentiment Analysis for this subject
-                $ai_summary = AISentimentEngine::getFacultyAiSummary($subject_name, $conn_responses);
+                    // AI Sentiment Analysis for this subject
+                    $ai_summary = AISentimentEngine::getFacultyAiSummary($subject_name, $conn_responses);
 
-                $subject_data[] = [
-                    'table_name' => $table_name,
-                    'subject' => $subject_name,
-                    'faculty' => $faculty_name,
-                    'status' => $faculty_status,
-                    'excellent' => $ex,
-                    'very_good' => $vg,
-                    'good' => $g,
-                    'poor' => $p,
-                    'bad' => $b,
-                    'submissions' => $submissions,
-                    'avg_rating' => $avg_rating,
-                    'ai' => $ai_summary
-                ];
+                    $subject_data[] = [
+                        'table_name' => $table_name,
+                        'subject' => $subject_name,
+                        'faculty' => $faculty_name,
+                        'status' => $faculty_status,
+                        'excellent' => $ex,
+                        'very_good' => $vg,
+                        'good' => $g,
+                        'poor' => $p,
+                        'bad' => $b,
+                        'submissions' => $submissions,
+                        'avg_rating' => $avg_rating,
+                        'ai' => $ai_summary
+                    ];
+                }
             }
         }
-    }
+    } catch (Throwable $e) {}
 }
 ?>
 
