@@ -9,10 +9,10 @@ require_once "_dbconfig.php";
 
 class AISentimentEngine {
 
-    // Toggle for external AI API (Set to true and provide API key to enable live cloud AI calls)
-    public static $use_external_ai = false;
-    public static $api_provider = 'gemini'; // 'gemini' or 'openai'
-    public static $api_key = ''; // Insert API key here or via environment variable
+    // Toggle for external AI API (Set to true to enable Google Gemini live cloud calls)
+    public static $use_external_ai = true;
+    public static $api_provider = 'gemini';
+    public static $api_key = '';
 
     private static $positive_words = [
         'excellent', 'great', 'amazing', 'helpful', 'clear', 'interactive', 'punctual',
@@ -35,6 +35,8 @@ class AISentimentEngine {
         self::$api_provider = strtolower($provider);
         if (!empty($apiKey)) {
             self::$api_key = $apiKey;
+        } else {
+            self::$api_key = getenv('GEMINI_API_KEY') ? getenv('GEMINI_API_KEY') : '';
         }
     }
 

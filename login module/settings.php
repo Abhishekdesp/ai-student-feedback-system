@@ -1,7 +1,6 @@
 <?php
 session_start();
 require_once "ai_sentiment_engine.php";
-
 require_once "_dbconfig.php";
 
 if (!isset($_SESSION['loggedin']) || $_SESSION['loggedin'] !== true) {
@@ -14,59 +13,42 @@ $message = "";
 // Database connection for settings persistence
 $conn = getGlobalDbConnection("admin");
 if ($conn && !$conn->connect_error) {
-    $conn->query("CREATE TABLE IF NOT EXISTS `system_settings` (
+    @$conn->query("CREATE TABLE IF NOT EXISTS `system_settings` (
         `setting_name` VARCHAR(100) PRIMARY KEY,
         `setting_value` TEXT NOT NULL
     )");
 }
 
-// Handle AI Settings Form Submission
+// Handle AI Settings Toggle Submission
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_ai_settings'])) {
     $use_ext = isset($_POST['use_external_ai']) ? '1' : '0';
-    $provider = isset($_POST['ai_provider']) ? $_POST['ai_provider'] : 'gemini';
-    $api_key = isset($_POST['ai_api_key']) ? trim($_POST['ai_api_key']) : '';
 
     if ($conn && !$conn->connect_error) {
         $stmt1 = $conn->prepare("REPLACE INTO `system_settings` (`setting_name`, `setting_value`) VALUES ('use_external_ai', ?)");
         $stmt1->bind_param("s", $use_ext);
         $stmt1->execute();
         $stmt1->close();
-
-        $stmt2 = $conn->prepare("REPLACE INTO `system_settings` (`setting_name`, `setting_value`) VALUES ('ai_provider', ?)");
-        $stmt2->bind_param("s", $provider);
-        $stmt2->execute();
-        $stmt2->close();
-
-        $stmt3 = $conn->prepare("REPLACE INTO `system_settings` (`setting_name`, `setting_value`) VALUES ('ai_api_key', ?)");
-        $stmt3->bind_param("s", $api_key);
-        $stmt3->execute();
-        $stmt3->close();
     }
 
     $_SESSION['use_external_ai'] = ($use_ext === '1');
-    $_SESSION['ai_provider'] = $provider;
-    $_SESSION['ai_api_key'] = $api_key;
+    AISentimentEngine::setExternalAiConfig(($use_ext === '1'), 'gemini', getenv('GEMINI_API_KEY'));
 
-    AISentimentEngine::setExternalAiConfig(($use_ext === '1'), $provider, $api_key);
+    $status_label = ($use_ext === '1') ? 'Enabled (Google Gemini 1.5 Flash)' : 'Disabled (Offline Lexicon Engine Active)';
 
     $message = '<div class="alert alert-success alert-dismissible fade show" role="alert">
-        ⚙️ <strong>AI Settings Saved Successfully!</strong> Your AI sentiment configuration has been updated.
+        ⚙️ <strong>AI Response Toggle Updated!</strong> Cloud AI is now <strong>' . $status_label . '</strong>.
         <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
     </div>';
 }
 
 // Load Current Settings
-$curr_use_ext = false;
-$curr_provider = 'gemini';
-$curr_api_key = '';
+$curr_use_ext = true;
 
 if ($conn && !$conn->connect_error) {
-    $res = $conn->query("SELECT * FROM `system_settings`");
+    $res = @$conn->query("SELECT * FROM `system_settings`");
     if ($res) {
         while ($row = $res->fetch_assoc()) {
             if ($row['setting_name'] === 'use_external_ai') $curr_use_ext = ($row['setting_value'] === '1');
-            if ($row['setting_name'] === 'ai_provider') $curr_provider = $row['setting_value'];
-            if ($row['setting_name'] === 'ai_api_key') $curr_api_key = $row['setting_value'];
         }
     }
 }
@@ -138,7 +120,7 @@ if ($conn && !$conn->connect_error) {
 <!-- Navigation Bar -->
 <nav class="navbar navbar-expand-lg navbar-dark sticky-top">
   <div class="container-fluid">
-    <a class="navbar-brand d-flex align-items-center gap-2" href="Homepage.php">
+    <a class="navbar-brand d-flex align-items-center gap-2" href="#">
       <i class="bi bi-mortarboard-fill text-primary"></i>
       Student Feedback System
     </a>
@@ -152,30 +134,20 @@ if ($conn && !$conn->connect_error) {
         <li class="nav-item"><a class="nav-link" href="add_faculty.php">Faculty Directory</a></li>
         <li class="nav-item"><a class="nav-link" href="sconnect.php">Student Import</a></li>
         <li class="nav-item"><a class="nav-link" href="Sample.php">Status Control</a></li>
-        <li class="nav-item"><a class="nav-link active fw-bold text-primary" href="settings.php"><i class="bi bi-gear-fill me-1"></i>Settings</a></li>
+        <li class="nav-item"><a class="nav-link text-info active" href="settings.php"><i class="bi bi-gear-fill me-1"></i>Settings</a></li>
         <li class="nav-item"><a class="nav-link text-warning" href="seed_demo_data.php"><i class="bi bi-database-fill-gear me-1"></i>Demo Data</a></li>
       </ul>
       <div class="d-flex align-items-center gap-3">
         <span class="text-white-50 small">Admin Account</span>
-        <button class="btn btn-outline-light btn-sm px-3" onclick="window.location.href='logout.php'">Logout</button>
+        <a class="btn btn-outline-light btn-sm px-3" href="logout.php">Logout</a>
       </div>
     </div>
   </div>
 </nav>
 
 <div class="container mt-4">
-    <div class="d-flex justify-content-between align-items-center mb-4">
-        <div>
-            <h4 class="fw-bold text-dark mb-1"><i class="bi bi-sliders text-primary me-2"></i>System Settings</h4>
-            <p class="text-muted small mb-0">Manage system parameters, AI integration, and administrative preferences</p>
-        </div>
-        <a class="btn btn-outline-secondary btn-sm" href="Homepage.php">&larr; Back to Dashboard</a>
-    </div>
-
-    <?php echo $message; ?>
-
     <div class="row g-4">
-        <!-- LEFT SIDEBAR -->
+        <!-- LEFT SIDEBAR MENU -->
         <div class="col-md-3">
             <div class="list-group sidebar-menu" id="settingsTab" role="tablist">
                 <button class="list-group-item list-group-item-action active d-flex align-items-center gap-2" id="tab-ai-btn" data-bs-toggle="pill" data-bs-target="#tab-ai" type="button" role="tab">
@@ -194,37 +166,28 @@ if ($conn && !$conn->connect_error) {
         <div class="col-md-9">
             <div class="tab-content" id="settingsTabContent">
                 
-                <!-- TAB 1: AI SENTIMENT ENGINE (DEDICATED OPTION) -->
+                <!-- TAB 1: AI SENTIMENT ENGINE (SINGLE CLEAN TOGGLE SWITCH) -->
                 <div class="tab-pane fade show active" id="tab-ai" role="tabpanel">
                     <div class="settings-card">
                         <div class="border-bottom pb-3 mb-4">
-                            <h5 class="fw-bold text-dark mb-1"><i class="bi bi-robot text-primary me-2"></i>AI Sentiment Analysis & Summarization</h5>
-                            <p class="text-muted small mb-0">Configure Cloud AI model integrations (Gemini / OpenAI) or use the offline NLP Lexicon Engine.</p>
+                            <h5 class="fw-bold text-dark mb-1"><i class="bi bi-robot text-primary me-2"></i>AI Sentiment & Response Engine</h5>
+                            <p class="text-muted small mb-0">Enable or disable Google Gemini 1.5 Flash Cloud AI response engine.</p>
                         </div>
+
+                        <?php echo $message; ?>
 
                         <form method="post" action="settings.php">
                             <input type="hidden" name="save_ai_settings" value="1">
 
                             <div class="form-check form-switch mb-4 p-3 bg-light rounded-3 border">
-                                <input class="form-check-input ms-0 me-3" type="checkbox" role="switch" id="use_external_ai" name="use_external_ai" <?php echo $curr_use_ext ? 'checked' : ''; ?>>
+                                <input class="form-check-input ms-0 me-3" style="width: 2.5em; height: 1.3em;" type="checkbox" role="switch" id="use_external_ai" name="use_external_ai" <?php echo $curr_use_ext ? 'checked' : ''; ?>>
                                 <div>
-                                    <label class="form-check-label fw-bold text-dark" for="use_external_ai">Enable External Cloud AI API Calls</label>
-                                    <div class="form-text small mb-0">When disabled, the system automatically uses the zero-cost offline NLP Lexicon Engine.</div>
+                                    <label class="form-check-label fw-bold text-dark fs-6" for="use_external_ai">Enable Google Gemini 1.5 Flash AI Engine</label>
+                                    <div class="form-text small mb-0 mt-1 text-muted">
+                                        When <strong>enabled</strong>, feedback is processed using live Google Gemini AI.<br>
+                                        When <strong>disabled</strong>, feedback is processed using the offline zero-cost Lexicon NLP Engine.
+                                    </div>
                                 </div>
-                            </div>
-
-                            <div class="mb-3">
-                                <label for="ai_provider" class="form-label text-dark fw-medium small">Select AI Provider</label>
-                                <select class="form-select" name="ai_provider" id="ai_provider">
-                                    <option value="gemini" <?php echo ($curr_provider === 'gemini') ? 'selected' : ''; ?>>Google Gemini (1.5 Flash API)</option>
-                                    <option value="openai" <?php echo ($curr_provider === 'openai') ? 'selected' : ''; ?>>OpenAI (GPT-3.5 Turbo API)</option>
-                                </select>
-                            </div>
-
-                            <div class="mb-4">
-                                <label for="ai_api_key" class="form-label text-dark fw-medium small">API Key</label>
-                                <input type="password" class="form-control" name="ai_api_key" id="ai_api_key" value="<?php echo htmlspecialchars($curr_api_key); ?>" placeholder="Enter your Gemini or OpenAI API Key...">
-                                <div class="form-text small">Stored securely in admin DB. If offline or empty key, falls back to offline engine automatically.</div>
                             </div>
 
                             <button type="submit" class="btn btn-primary px-4 py-2 fw-medium shadow-sm">
@@ -257,8 +220,8 @@ if ($conn && !$conn->connect_error) {
                         </div>
                         <ul class="list-group list-group-flush small">
                             <li class="list-group-item d-flex justify-content-between"><span>PHP Version:</span> <strong><?php echo PHP_VERSION; ?></strong></li>
-                            <li class="list-group-item d-flex justify-content-between"><span>Database Host:</span> <strong>127.0.0.1 (MySQL)</strong></li>
-                            <li class="list-group-item d-flex justify-content-between"><span>Application Module:</span> <strong>Student Feedback System v2.0</strong></li>
+                            <li class="list-group-item d-flex justify-content-between"><span>AI Engine Provider:</span> <strong>Google Gemini 1.5 Flash</strong></li>
+                            <li class="list-group-item d-flex justify-content-between"><span>Database Driver:</span> <strong>MySQL (TiDB Cloud SSL Enabled)</strong></li>
                         </ul>
                     </div>
                 </div>
@@ -268,6 +231,7 @@ if ($conn && !$conn->connect_error) {
     </div>
 </div>
 
+<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 </html>
