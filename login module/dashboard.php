@@ -40,7 +40,6 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
                 header("Location: shomepage.php");
                 exit();
             }
-            $conn_student->close();
         }
     }
 }
@@ -73,10 +72,8 @@ if ($conn_faculty && !$conn_faculty->connect_error) {
             $row['is_submitted'] = $is_submitted;
             $faculty_cards[] = $row;
         }
-        if ($conn_st) { $conn_st->close(); }
         $stmt->close();
     }
-    $conn_faculty->close();
 }
 ?>
 
