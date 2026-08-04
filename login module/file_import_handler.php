@@ -1,37 +1,35 @@
 <?php
-error_reporting(E_ALL);
-ini_set('display_errors', 1);
+session_start();
+require_once __DIR__ . '/vendor/autoload.php';
+require_once "_dbconfig.php";
+
 use PhpOffice\PhpSpreadsheet\IOFactory;
 
-// Server-side PHP script to handle file import
-if ($_SERVER["REQUEST_METHOD"] == "POST") {
-    // Check if file was uploaded without errors
-    if (isset($_FILES["file"]) && $_FILES["file"]["error"] == 0) {
-        $faculty_name = $_POST["faculty_name"];
-        $subject_name = $_POST["subject_name"];
+if (!isset($_SESSION['loggedin']) || $_SESSION['loggedin'] !== true) {
+    echo "Unauthorized access.";
+    exit();
+}
 
-        // Here, you can write code to handle the file import operation
-        $file_name = $_FILES["file"]["name"];
-        $file_tmp = $_FILES["file"]["tmp_name"];
+if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_FILES["file"]) && $_FILES["file"]["error"] == UPLOAD_ERR_OK) {
 
-        // Load PhpSpreadsheet library
-        require 'vendor/autoload.php';
+    $faculty_name = isset($_POST['faculty_name']) ? $_POST['faculty_name'] : '';
+    $subject_name = isset($_POST['subject_name']) ? $_POST['subject_name'] : '';
 
+    $file_tmp = $_FILES["file"]["tmp_name"];
+
+    try {
         // Load the uploaded Excel file
         $spreadsheet = IOFactory::load($file_tmp);
-
-        // Get the first worksheet
         $worksheet = $spreadsheet->getActiveSheet();
 
         // Insert the faculty name into B column, 9th row
         $worksheet->setCellValue('B9', "Name of Staff: $faculty_name");
 
         // Connect to the faculty database
-        $conn_faculty = new mysqli("localhost", "root", "", "faculty");
+        $conn_faculty = getGlobalDbConnection("faculty");
 
-        // Check the connection
-        if ($conn_faculty->connect_error) {
-            die("Connection failed: " . $conn_faculty->connect_error);
+        if (!$conn_faculty || $conn_faculty->connect_error) {
+            die("Connection failed to faculty database.");
         }
 
         // Prepare and execute query to fetch semester, scheme, and faculty name based on subject name
@@ -57,11 +55,11 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
             $file_path = __DIR__ . "/uploads/" . $subject_name . ".xlsx";
 
             // Fetch table name from the responses database based on subject name
-            $table_name = $subject_name . "_responses";
+            $table_name = strtolower($subject_name) . "_responses";
 
             // Prepare and execute query to fetch questions, excellent, very_good, good, poor, and bad from the subjectname_Responses table
-            $conn_responses = new mysqli("localhost", "root", "", "responses");
-            $data_query = "SELECT questions, excellent, very_good, good, poor, bad, counter FROM $table_name";
+            $conn_responses = getGlobalDbConnection("responses");
+            $data_query = "SELECT questions, excellent, very_good, good, poor, bad, counter FROM `$table_name`";
             $data_result = $conn_responses->query($data_query);
 
             if ($data_result && $data_result->num_rows > 0) {
@@ -71,60 +69,61 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
                 $goods = [];
                 $poors = [];
                 $bads = [];
-                $counterSum = 0;
-                while ($row = $data_result->fetch_assoc()) {
-                    $questions[] = $row["questions"];
-                    $excellents[] = $row["excellent"];
-                    $veryGoods[] = $row["very_good"];
-                    $goods[] = $row["good"];
-                    $poors[] = $row["poor"];
-                    $bads[] = $row["bad"];
-                    $counterSum += intval($row["counter"]);
+                $counters = [];
+
+                while ($data_row = $data_result->fetch_assoc()) {
+                    $questions[] = $data_row["questions"];
+                    $excellents[] = $data_row["excellent"];
+                    $veryGoods[] = $data_row["very_good"];
+                    $goods[] = $data_row["good"];
+                    $poors[] = $data_row["poor"];
+                    $bads[] = $data_row["bad"];
+                    $counters[] = $data_row["counter"];
                 }
 
-                // Write questions, excellent, very_good, good, poor, and bad into the Excel file
-                $start_row = 15;
-                foreach ($questions as $index => $question) {
-                    if ($index < 10) { // Write only the first 10 questions
-                        $cell_question = "C" . ($start_row + $index);
-                        $cell_excellent = "F" . ($start_row + $index);
-                        $cell_very_good = "G" . ($start_row + $index);
-                        $cell_good = "H" . ($start_row + $index);
-                        $cell_poor = "I" . ($start_row + $index);
-                        $cell_bad = "J" . ($start_row + $index);
-                        $worksheet->setCellValue($cell_question, $question);
-                        $worksheet->setCellValue($cell_excellent, $excellents[$index]);
-                        $worksheet->setCellValue($cell_very_good, $veryGoods[$index]);
-                        $worksheet->setCellValue($cell_good, $goods[$index]);
-                        $worksheet->setCellValue($cell_poor, $poors[$index]);
-                        $worksheet->setCellValue($cell_bad, $bads[$index]);
-                    }
+                // Insert fetched data into cells
+                for ($i = 0; $i < count($questions); $i++) {
+                    $row_number = 17 + $i;
+                    $worksheet->setCellValue('B' . $row_number, $questions[$i]);
+                    $worksheet->setCellValue('C' . $row_number, $excellents[$i]);
+                    $worksheet->setCellValue('D' . $row_number, $veryGoods[$i]);
+                    $worksheet->setCellValue('E' . $row_number, $goods[$i]);
+                    $worksheet->setCellValue('F' . $row_number, $poors[$i]);
+                    $worksheet->setCellValue('G' . $row_number, $bads[$i]);
                 }
 
-                // Write the counter sum into column E30
-                $worksheet->setCellValue('E30', $counterSum);
+                // Insert counter value into cell C10
+                if (!empty($counters)) {
+                    $worksheet->setCellValue('C10', $counters[0]);
+                }
 
-                // Create the Excel file
                 $writer = IOFactory::createWriter($spreadsheet, 'Xlsx');
                 $writer->save($file_path);
 
-                echo "File exported successfully.";
-            } else {
-                echo "No data found for the given subject.";
-            }
+                // Set headers to trigger file download
+                header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+                header('Content-Disposition: attachment;filename="' . $subject_name . '.xlsx"');
+                header('Cache-Control: max-age=0');
 
-            // Close the responses database connection
+                // Output the Excel file directly to the browser
+                readfile($file_path);
+
+                // Delete the file after sending it
+                unlink($file_path);
+                exit;
+            } else {
+                echo "No data found in database table $table_name.";
+            }
             $conn_responses->close();
         } else {
-            echo "Scheme and semester not found for the given subject.";
+            echo "No faculty record found for subject $subject_name.";
         }
 
-        // Close faculty database connection
         $conn_faculty->close();
-    } else {
-        // No file uploaded or error during upload
-        echo "Error uploading file.";
+    } catch (Exception $e) {
+        echo "Error loading spreadsheet: " . $e->getMessage();
     }
-    exit();
+} else {
+    echo "No file uploaded or error uploading file.";
 }
 ?>

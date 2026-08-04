@@ -1,32 +1,43 @@
+<?php
+session_start();
+require_once "_dbconfig.php";
+
+if (!isset($_SESSION['loggedin']) || $_SESSION['loggedin'] !== true) {
+    header("Location: login.php");
+    exit();
+}
+
+$conn = getGlobalDbConnection("questions");
+
+if (!$conn || $conn->connect_error) {
+    die("Connection failed to questions database.");
+}
+?>
 <!DOCTYPE html>
 <html lang="en">
 
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
-    <title>Question Renewal</title>
-    <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0/css/bootstrap.min.css">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Question Renewal - Student Feedback System</title>
+    <!-- Bootstrap 5 -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css">
     <style>
-        .edit-form {
-            display: none;
-        }
-
-        /* Center the container horizontally and position slightly at the top */
         body {
-            display: flex;
-            align-items: flex-start;
-            justify-content: center;
-            height: 100vh;
-            margin: 0;
+            background-color: #f8f9fa;
+            color: #1e293b;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            padding-bottom: 50px;
         }
 
-        /* Style the container */
         .container-box {
-            background-color: #f8f9fa; /* Bootstrap default background color */
-            padding: 20px;
-            border-radius: 10px;
-            margin-top: 30px; /* Adjust the top margin as needed */
-            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+            background-color: #ffffff;
+            border: 1px solid #e2e8f0;
+            border-radius: 12px;
+            padding: 30px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+            margin-top: 40px;
         }
     </style>
 </head>
@@ -34,25 +45,13 @@
 <body>
 
     <div style="position: absolute; top: 15px; left: 15px;">
-      <a class="btn btn-dark btn-sm font-weight-bold" href="Homepage.php" title="Back" style="font-size: 1.1rem; padding: 2px 10px;">&larr;</a>
+        <a class="btn btn-outline-secondary btn-sm" href="Homepage.php" title="Back">&larr; Back</a>
     </div>
 
     <div class="container mt-5 container-box">
-        <h2 class="text-center">Question Renewal</h2>
+        <h3 class="text-center fw-bold mb-4">Question Renewal & Management</h3>
 
         <?php
-        // PHP code to handle question renewal
-        $servername = "localhost";
-        $username = "root";
-        $password = "";
-        $dbname = "questions";
-
-        $conn = new mysqli($servername, $username, $password, $dbname);
-
-        if ($conn->connect_error) {
-            die("Connection failed: " . $conn->connect_error);
-        }
-
         // Create the questions table if not exists
         $createTableQuery = "CREATE TABLE IF NOT EXISTS questions (
             id INT PRIMARY KEY AUTO_INCREMENT,
@@ -60,132 +59,97 @@
         )";
 
         if ($conn->query($createTableQuery) === FALSE) {
-            echo "Error creating table: " . $conn->error;
+            echo '<div class="alert alert-danger">Error creating table: ' . htmlspecialchars($conn->error) . '</div>';
         }
 
         // Function to fetch and display questions
         function showQuestions($conn)
         {
-            $result = $conn->query("SELECT * FROM questions");
+            $result = $conn->query("SELECT * FROM questions ORDER BY id ASC");
 
-            if ($result->num_rows > 0) {
-                echo '<table class="table mt-3">
-                    <thead>
+            if ($result && $result->num_rows > 0) {
+                echo '<table class="table table-hover align-middle mt-3">
+                    <thead class="table-light">
                         <tr>
                             <th>ID</th>
-                            <th>Question</th>
-                            <th>Action</th>
+                            <th>Question Text</th>
+                            <th style="width: 150px;">Action</th>
                         </tr>
                     </thead>
                     <tbody>';
 
                 while ($row = $result->fetch_assoc()) {
                     echo '<tr>
-                        <td>' . $row["id"] . '</td>
-                        <td>' . $row["questions"] . '</td>
+                        <td>#' . $row['id'] . '</td>
+                        <td>' . htmlspecialchars($row['questions']) . '</td>
                         <td>
-                            <button class="btn btn-info btn-sm edit-button" name="editQuestion" data-questionid="' . $row["id"] . '">Edit</button>
-                            <div class="edit-form" id="editForm_' . $row["id"] . '">
-                                <form method="post" action="' . htmlspecialchars($_SERVER["PHP_SELF"]) . '">
-                                    <input type="hidden" name="editedQuestionID" value="' . $row["id"] . '">
-                                    <input type="text" class="form-control" name="editedQuestion" value="' . $row["questions"] . '">
-                                    <button class="btn btn-warning btn-sm save-button" name="saveEditedQuestion">Save Changes</button>
-                                </form>
-                            </div>
+                            <form method="post" action="" style="display:inline;">
+                                <input type="hidden" name="delete_id" value="' . $row['id'] . '">
+                                <button type="submit" class="btn btn-outline-danger btn-sm" onclick="return confirm(\'Are you sure you want to delete this question?\')">
+                                    <i class="bi bi-trash"></i> Delete
+                                </button>
+                            </form>
                         </td>
                     </tr>';
                 }
 
                 echo '</tbody></table>';
             } else {
-                echo '<div class="alert alert-info mt-3" role="alert">No questions found in the database.</div>';
+                echo '<div class="alert alert-light text-center border my-3">No questions found in database. Add a question below to get started.</div>';
             }
         }
 
-        // Check if the "Show Questions" button has been submitted
-        if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST["showQuestions"])) {
-            showQuestions($conn);
-        } else {
-            // If "Show Questions" button not submitted, show questions directly
-            showQuestions($conn);
-        }
-
-        // Handle form submissions
-        if ($_SERVER["REQUEST_METHOD"] == "POST") {
-            if (isset($_POST["editQuestion"])) {
-                // Edit Question button clicked
-                $editQuestionID = $_POST["editQuestion"];
-
-                // Display the edit form for the selected question
-                echo '<div class="alert alert-info mt-3" role="alert">Editing question with ID: ' . $editQuestionID . '</div>';
-
-                // Retrieve the question data for the selected question
-                $result = $conn->query("SELECT * FROM questions WHERE id = $editQuestionID");
-
-                if ($result->num_rows > 0) {
-                    $row = $result->fetch_assoc();
-                    echo '<div class="edit-form" id="editForm_' . $row["id"] . '">
-                            <form method="post" action="' . htmlspecialchars($_SERVER["PHP_SELF"]) . '">
-                                <input type="hidden" name="editedQuestionID" value="' . $row["id"] . '">
-                                <input type="text" class="form-control" name="editedQuestion" value="' . $row["questions"] . '">
-                                <button class="btn btn-warning btn-sm save-button" name="saveEditedQuestion">Save Changes</button>
-                            </form>
-                        </div>';
+        // Handle Add Question
+        if (isset($_POST['new_question'])) {
+            $newQuestion = trim($_POST['new_question']);
+            if (!empty($newQuestion)) {
+                $stmt = $conn->prepare("INSERT INTO questions (questions) VALUES (?)");
+                $stmt->bind_param("s", $newQuestion);
+                if ($stmt->execute()) {
+                    echo '<div class="alert alert-success alert-dismissible fade show" role="alert">
+                        Question added successfully!
+                        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                    </div>';
                 } else {
-                    echo '<div class="alert alert-danger mt-3" role="alert">Error fetching question data for editing.</div>';
+                    echo '<div class="alert alert-danger">Error adding question: ' . htmlspecialchars($conn->error) . '</div>';
                 }
-            }
-
-            if (isset($_POST["saveEditedQuestion"])) {
-                // Save Edited Question button clicked
-                $editedQuestionID = $_POST["editedQuestionID"];
-                $editedQuestion = $_POST["editedQuestion"];
-
-                // Update the edited question in the database
-                $sql = "UPDATE questions SET questions = '$editedQuestion' WHERE id = '$editedQuestionID'";
-
-                if ($conn->query($sql) === TRUE) {
-                    echo '<div class="alert alert-success mt-3" role="alert">Question updated successfully!</div>';
-                } else {
-                    echo '<div class="alert alert-danger mt-3" role="alert">Error updating question: ' . $conn->error . '</div>';
-                }
+                $stmt->close();
             }
         }
 
+        // Handle Delete Question
+        if (isset($_POST['delete_id'])) {
+            $deleteId = intval($_POST['delete_id']);
+            $stmt = $conn->prepare("DELETE FROM questions WHERE id = ?");
+            $stmt->bind_param("i", $deleteId);
+            if ($stmt->execute()) {
+                echo '<div class="alert alert-success alert-dismissible fade show" role="alert">
+                    Question deleted successfully!
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                </div>';
+            }
+            $stmt->close();
+        }
+
+        // Display Questions
+        showQuestions($conn);
         ?>
 
-        
+        <hr class="my-4">
+
+        <!-- Form to Add a New Question -->
+        <form method="post" action="" class="row g-3">
+            <div class="col-md-9">
+                <label for="new_question" class="form-label fw-bold">Add New Survey Question:</label>
+                <input type="text" class="form-control" name="new_question" id="new_question" placeholder="e.g. Clarity of explanation and domain expertise?" required>
+            </div>
+            <div class="col-md-3 d-flex align-items-end">
+                <button type="submit" class="btn btn-primary w-100 py-2 fw-medium">Add Question</button>
+            </div>
+        </form>
     </div>
 
-    <script>
-        document.addEventListener('DOMContentLoaded', function () {
-            document.querySelectorAll('.edit-button').forEach(function (button) {
-                button.addEventListener('click', function () {
-                    var questionId = this.getAttribute('data-questionid');
-                    editQuestion(questionId);
-                });
-            });
-
-            function editQuestion(id) {
-                // Toggle the display of the edit form for the clicked question
-                var editForm = document.getElementById('editForm_' + id);
-
-                // Toggle the display using the "style.display" property
-                if (editForm.style.display === 'none' || editForm.style.display === '') {
-                    editForm.style.display = 'block';
-                } else
-                {
-                    editForm.style.display = 'none';
-                }
-            }
-        });
-
-    </script>
-
-    <script src="https://code.jquery.com/jquery-3.2.1.slim.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.12.9/umd/popper.min.js"></script>
-    <script src="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0/js/bootstrap.min.js"></script>
-
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 
 </html>

@@ -2,18 +2,17 @@
 session_start();
 require_once "ai_sentiment_engine.php";
 
+require_once "_dbconfig.php";
+
 if (!isset($_SESSION['loggedin']) || $_SESSION['loggedin'] !== true) {
     header("Location: login.php");
     exit();
 }
 
-$host = "127.0.0.1";
-$username = "root";
-$password = "";
 $message = "";
 
 // Database connection for settings persistence
-$conn = @new mysqli($host, $username, $password, "admin");
+$conn = getGlobalDbConnection("admin");
 if ($conn && !$conn->connect_error) {
     $conn->query("CREATE TABLE IF NOT EXISTS `system_settings` (
         `setting_name` VARCHAR(100) PRIMARY KEY,

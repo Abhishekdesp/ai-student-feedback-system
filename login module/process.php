@@ -1,55 +1,58 @@
 <?php
+session_start();
+require_once "_dbconfig.php";
+
 // Check if the form is submitted
 if ($_SERVER["REQUEST_METHOD"] == "POST") {
 
     // Check if all radio buttons are checked
     $allChecked = true;
-    foreach ($_POST['response'] as $response) {
-        if (empty($response)) {
-            $allChecked = false;
-            break;
+    if (isset($_POST['response']) && is_array($_POST['response'])) {
+        foreach ($_POST['response'] as $response) {
+            if (empty($response)) {
+                $allChecked = false;
+                break;
+            }
         }
+    } else {
+        $allChecked = false;
     }
 
     if ($allChecked) {
         // Connect to the database
-        $conn = new mysqli("localhost", "root", "", "responses");
+        $conn = getGlobalDbConnection("responses");
 
-        // Check the connection
-        if ($conn->connect_error) {
-            die("Connection failed: " . $conn->connect_error);
+        if (!$conn || $conn->connect_error) {
+            die("Connection failed to responses database.");
         }
 
         // Process and insert responses into the database
         foreach ($_POST['response'] as $questionId => $response) {
-            // Ensure that the values are safe to insert into the database (to prevent SQL injection)
-            $questionId = $conn->real_escape_string($questionId);
-            $response = $conn->real_escape_string($response);
+            $questionId = intval($questionId);
+            $response = intval($response);
 
-            // Insert the response into the database
-            $sql = "INSERT INTO responses (question_id, response) VALUES ('$questionId', '$response')";
-
-            if ($conn->query($sql) !== TRUE) {
-                echo "Error: " . $sql . "<br>" . $conn->error;
+            switch ($response) {
+                case 5: $column = 'excellent'; break;
+                case 4: $column = 'very_good'; break;
+                case 3: $column = 'good'; break;
+                case 2: $column = 'poor'; break;
+                case 1: $column = 'bad'; break;
+                default: continue 2;
             }
+
+            $subject = isset($_SESSION['selected_subject']) ? strtolower($_SESSION['selected_subject']) : 'ajp';
+            $tbl = "{$subject}_responses";
+            $sql = "UPDATE `$tbl` SET `$column` = `$column` + 1 WHERE id = $questionId";
+            $conn->query($sql);
         }
 
-        // Close the database connection
         $conn->close();
 
-        // Redirect back to the survey form or display a success message
-        header("Location: shomepage.php");
+        // Redirect back to dashboard after submitting
+        header("Location: dashboard.php");
         exit();
     } else {
-        echo "<script>alert('Please answer all questions.');</script>";
-        echo "<script>window.history.back();</script>"; // Go back to the previous page
-        exit();
+        echo "Please answer all questions before submitting.";
     }
-} else {
-    // If the form is not submitted, redirect to the survey form
-    header("Location: shomepage.php");
-    exit();
 }
 ?>
-
-
