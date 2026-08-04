@@ -3,18 +3,18 @@ session_start();
 require_once "_dbconfig.php";
 
 // If already logged in, redirect to appropriate home page
-if (isset($_SESSION['loggedin']) && $_SESSION['loggedin'] === true) {
+if (isset($_SESSION['loggedin']) || (isset($_SESSION['username']) && !empty($_SESSION['username']))) {
     if (isset($_SESSION['role']) && $_SESSION['role'] === 'student') {
         header("Location: dashboard.php");
         exit();
-    } else {
+    } else if (isset($_SESSION['role']) && $_SESSION['role'] === 'teacher') {
         header("Location: Homepage.php");
         exit();
     }
 }
 
 $alertMessage = '';
-$selectedRole = isset($_POST['role']) ? $_POST['role'] : 'teacher';
+$selectedRole = isset($_POST['role']) ? $_POST['role'] : 'student';
 
 function getDbConnection($dbname) {
     return getGlobalDbConnection($dbname);
@@ -23,7 +23,7 @@ function getDbConnection($dbname) {
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $username = isset($_POST['username']) ? trim($_POST['username']) : '';
     $password = isset($_POST['password']) ? trim($_POST['password']) : '';
-    $role = isset($_POST['role']) ? $_POST['role'] : 'teacher';
+    $role = isset($_POST['role']) ? $_POST['role'] : 'student';
     $selectedRole = $role;
 
     if (empty($username) || empty($password)) {
@@ -40,19 +40,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($conn_s && !$conn_s->connect_error) {
                 $u_s = $conn_s->real_escape_string($username);
                 $p_s = $conn_s->real_escape_string($password);
-                $sql_s = "SELECT * FROM student WHERE sname='$u_s' AND password='$p_s'";
-                $res_s = $conn_s->query($sql_s);
+                $sql_s = "SELECT * FROM student WHERE LOWER(sname)=LOWER('$u_s') AND password='$p_s'";
+                $res_s = @$conn_s->query($sql_s);
                 if ($res_s && $res_s->num_rows > 0) {
                     $row_s = $res_s->fetch_assoc();
                     $_SESSION['loggedin'] = true;
                     $_SESSION['role'] = 'student';
                     $_SESSION['username'] = $row_s['sname'];
                     $_SESSION['year'] = $row_s['year'];
-                    $conn_s->close();
                     header("Location: dashboard.php");
                     exit();
                 }
-                $conn_s->close();
             }
         }
 
@@ -62,18 +60,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($conn_a && !$conn_a->connect_error) {
                 $u_a = $conn_a->real_escape_string($username);
                 $p_a = $conn_a->real_escape_string($password);
-                $sql_a = "SELECT * FROM admin WHERE username='$u_a' AND password='$p_a'";
-                $res_a = $conn_a->query($sql_a);
+                $sql_a = "SELECT * FROM admin WHERE LOWER(username)=LOWER('$u_a') AND password='$p_a'";
+                $res_a = @$conn_a->query($sql_a);
                 if ($res_a && $res_a->num_rows > 0) {
                     $row_a = $res_a->fetch_assoc();
                     $_SESSION['loggedin'] = true;
                     $_SESSION['role'] = 'teacher';
                     $_SESSION['username'] = $row_a['username'];
-                    $conn_a->close();
                     header("Location: Homepage.php");
                     exit();
                 }
-                $conn_a->close();
             }
         }
 
@@ -124,7 +120,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 <div class="login-card">
   <div class="text-center mb-4">
-    <h3 class="font-weight-bold" id="formTitle">Admin / Teacher Login</h3>
+    <h3 class="font-weight-bold" id="formTitle">Student Login</h3>
   </div>
 
   <?php echo $alertMessage; ?>
@@ -142,8 +138,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     </div>
 
     <div class="form-group">
-      <label for="username" id="usernameLabel" class="font-weight-bold">Teacher / Admin Username:</label>
-      <input type="text" class="form-control" name="username" id="username" placeholder="Enter username" required>
+      <label for="username" id="usernameLabel" class="font-weight-bold">Student Name:</label>
+      <input type="text" class="form-control" name="username" id="username" placeholder="e.g. Aarav" required>
     </div>
 
     <div class="form-group mb-4">
@@ -152,7 +148,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     </div>
 
     <button type="submit" class="btn btn-primary btn-block py-2 font-weight-bold" id="submitBtn">
-      Sign In as Teacher
+      Sign In as Student
     </button>
   </form>
 </div>
